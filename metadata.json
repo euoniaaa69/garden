@@ -1,0 +1,7 @@
+{
+  "name": "Ambient Garden",
+  "description": "A calming ambient plant-growing experience with real-time growth, dynamic day/night cycles, weather, and relaxing lo-fi soundscapes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
