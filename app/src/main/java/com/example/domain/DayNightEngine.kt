@@ -11,6 +11,7 @@ import java.time.LocalTime
 data class DayNightContext(
     val timeOfDay: TimeOfDay,
     val localTimeFormatted: String,
+    val localTimeWithSeconds: String = "",
     val skyTopColor: Color,
     val skyBottomColor: Color,
     val horizonGlowColor: Color,
@@ -43,12 +44,14 @@ object DayNightEngine {
     ): DayNightContext {
         val hour = localTime.hour
         val minute = localTime.minute
-        val timeFloat = hour + (minute / 60.0f) // 0.0 to 23.99
+        val second = localTime.second
+        val timeFloat = hour + (minute / 60.0f) + (second / 3600.0f) // 0.0 to 23.99
 
         val hourFormatted = String.format("%02d:%02d", hour, minute)
+        val fullTimeFormatted = String.format("%02d:%02d:%02d", hour, minute, second)
 
         if (overrideTimeOfDay != null) {
-            return fromPreset(overrideTimeOfDay, hourFormatted)
+            return fromPreset(overrideTimeOfDay, hourFormatted, fullTimeFormatted)
         }
 
         val tuple = when {
@@ -195,6 +198,7 @@ object DayNightEngine {
         return DayNightContext(
             timeOfDay = tuple.tod,
             localTimeFormatted = hourFormatted,
+            localTimeWithSeconds = fullTimeFormatted,
             skyTopColor = tuple.top,
             skyBottomColor = tuple.bot,
             horizonGlowColor = tuple.hor,
@@ -216,7 +220,7 @@ object DayNightEngine {
         )
     }
 
-    private fun fromPreset(tod: TimeOfDay, formattedTime: String): DayNightContext {
+    private fun fromPreset(tod: TimeOfDay, formattedTime: String, fullTimeFormatted: String = ""): DayNightContext {
         val isSun = !tod.isNight
         val sx = if (isSun) 0.5f else 0.7f
         val sy = if (isSun) 0.25f else 0.22f
@@ -225,6 +229,7 @@ object DayNightEngine {
         return DayNightContext(
             timeOfDay = tod,
             localTimeFormatted = formattedTime,
+            localTimeWithSeconds = fullTimeFormatted.ifEmpty { formattedTime },
             skyTopColor = tod.skyTopColor,
             skyBottomColor = tod.skyBottomColor,
             horizonGlowColor = tod.horizonGlowColor,

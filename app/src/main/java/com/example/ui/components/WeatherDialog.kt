@@ -39,6 +39,7 @@ import com.example.ui.theme.ArtisticIndigoLight
 import com.example.ui.theme.ArtisticIndigoPrimary
 import com.example.ui.theme.ArtisticTextPrimary
 import com.example.ui.theme.ArtisticTextSecondary
+import com.example.ui.util.LocalAppStrings
 
 @Composable
 fun WeatherDialog(
@@ -48,6 +49,7 @@ fun WeatherDialog(
     onSetAutoMode: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val strings = LocalAppStrings.current
     Dialog(onDismissRequest = onDismiss) {
         PixelFrame(
             backgroundColor = Color(0xF80B1120),
@@ -70,14 +72,14 @@ fun WeatherDialog(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "Garden Weather",
+                                text = strings.gardenWeather,
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = ArtisticTextPrimary
                                 )
                             )
                             Text(
-                                text = "Dynamic atmosphere cycle",
+                                text = strings.dynamicAtmosphere,
                                 style = MaterialTheme.typography.bodySmall.copy(color = ArtisticTextSecondary, fontSize = 11.sp)
                             )
                         }
@@ -125,7 +127,7 @@ fun WeatherDialog(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Natural Weather Cycle",
+                                text = strings.naturalWeatherCycle,
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = ArtisticTextPrimary,
@@ -133,7 +135,7 @@ fun WeatherDialog(
                                 )
                             )
                             Text(
-                                text = "Gently shifts between clear skies, clouds, and rain over time.",
+                                text = strings.naturalWeatherDesc,
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = ArtisticTextSecondary,
                                     fontSize = 10.sp
@@ -146,7 +148,7 @@ fun WeatherDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "MANUAL OVERRIDE",
+                    text = strings.manualOverride,
                     style = MaterialTheme.typography.labelSmall.copy(
                         color = Color(0xFF7DD3FC),
                         fontSize = 10.sp,

@@ -49,6 +49,8 @@ import com.example.ui.theme.ArtisticIndigoPrimary
 import com.example.ui.theme.ArtisticTextPrimary
 import com.example.ui.theme.ArtisticTextSecondary
 
+import com.example.ui.util.LocalAppStrings
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsDialog(
@@ -56,13 +58,17 @@ fun SettingsDialog(
     timeScaleMultiplier: Float,
     currentTimeOfDayOverride: TimeOfDay?,
     activeTimeOfDay: TimeOfDay,
+    languageCode: String,
     onPerformanceModeToggle: (Boolean) -> Unit,
     onTimeScaleChange: (Float) -> Unit,
     onTimeOfDaySelect: (TimeOfDay?) -> Unit,
+    onLanguageSelect: (String) -> Unit,
     onSaveProgress: () -> Unit = {},
     onResetGarden: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val strings = LocalAppStrings.current
+
     Dialog(onDismissRequest = onDismiss) {
         PixelFrame(
             backgroundColor = Color(0xF80B1120),
@@ -88,7 +94,7 @@ fun SettingsDialog(
                         PixelIcons.Gear(size = 22.dp)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Garden Settings",
+                            text = strings.settingsTitle,
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = ArtisticTextPrimary
@@ -120,7 +126,7 @@ fun SettingsDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "LIGHTING & SCREEN TINT",
+                        text = strings.lightingScreenTint,
                         style = MaterialTheme.typography.labelSmall.copy(
                             color = Color(0xFFCBD5E1),
                             fontSize = 10.sp,
@@ -138,7 +144,7 @@ fun SettingsDialog(
                     )
                 }
                 Text(
-                    text = "Dynamic color grade transitions simulating morning, sunset, and starry night light.",
+                    text = strings.dynamicColorGrade,
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = ArtisticTextSecondary,
                         fontSize = 10.sp
@@ -173,7 +179,7 @@ fun SettingsDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Auto Clock",
+                                text = strings.autoClock,
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     color = if (isAutoSelected) Color(0xFFA5B4FC) else ArtisticTextSecondary,
                                     fontWeight = if (isAutoSelected) FontWeight.Bold else FontWeight.Normal,
@@ -226,6 +232,62 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
+                // Language Selection
+                Text(
+                    text = strings.language,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = Color(0xFFA5B4FC),
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    ),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val isEn = languageCode == "en"
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(if (isEn) Color(0xFF1E1B4B) else Color(0xFF0F172A))
+                            .border(1.dp, if (isEn) Color(0xFF6366F1) else Color(0xFF334155))
+                            .clickable { onLanguageSelect("en") }
+                            .padding(vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = strings.english,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = if (isEn) Color(0xFFE0E7FF) else ArtisticTextSecondary,
+                                fontWeight = if (isEn) FontWeight.Bold else FontWeight.Normal
+                            )
+                        )
+                    }
+
+                    val isId = languageCode == "id"
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(if (isId) Color(0xFF1E1B4B) else Color(0xFF0F172A))
+                            .border(1.dp, if (isId) Color(0xFF6366F1) else Color(0xFF334155))
+                            .clickable { onLanguageSelect("id") }
+                            .padding(vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = strings.indonesian,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                color = if (isId) Color(0xFFE0E7FF) else ArtisticTextSecondary,
+                                fontWeight = if (isId) FontWeight.Bold else FontWeight.Normal
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
                 // Performance & Battery Optimization
                 Box(
                     modifier = Modifier
@@ -252,7 +314,7 @@ fun SettingsDialog(
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = "Eco Performance Mode",
+                                    text = strings.ecoPerformanceMode,
                                     style = MaterialTheme.typography.bodyMedium.copy(
                                         color = ArtisticTextPrimary,
                                         fontWeight = FontWeight.SemiBold,
@@ -260,7 +322,7 @@ fun SettingsDialog(
                                     )
                                 )
                                 Text(
-                                    text = "Optimizes pixel particle rendering for cooler running.",
+                                    text = strings.ecoDesc,
                                     style = MaterialTheme.typography.bodySmall.copy(
                                         color = ArtisticTextSecondary,
                                         fontSize = 10.sp
@@ -284,7 +346,7 @@ fun SettingsDialog(
 
                 // Growth Progression Scale
                 Text(
-                    text = "GROWTH TIME SCALE",
+                    text = strings.growthTimeScale,
                     style = MaterialTheme.typography.labelSmall.copy(
                         color = Color(0xFFCBD5E1),
                         fontSize = 10.sp,
@@ -293,7 +355,7 @@ fun SettingsDialog(
                     )
                 )
                 Text(
-                    text = "Default is wall-clock pacing (days). You can preview faster progression below.",
+                    text = strings.growthDesc,
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = ArtisticTextSecondary,
                         fontSize = 10.sp
@@ -355,7 +417,7 @@ fun SettingsDialog(
                     PixelIcons.FloppyDisk(size = 16.dp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Save Progress to Room DB",
+                        text = strings.saveProgress,
                         color = Color(0xFFD1FAE5),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                     )
@@ -382,7 +444,7 @@ fun SettingsDialog(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Plant Fresh Seed",
+                        text = strings.plantFreshSeed,
                         color = Color(0xFFFCA5A5),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                     )

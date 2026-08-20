@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * User persistent preferences for relaxation, audio mixing, weather, and performance.
+ * User persistent preferences for relaxation, audio mixing, weather, music player, and performance.
  */
 @Entity(tableName = "garden_settings")
 data class GardenSettingsEntity(
@@ -16,5 +16,11 @@ data class GardenSettingsEntity(
     val weatherMode: String = "auto", // "auto", "clear", "cloudy", "light_rain", "rain", "fog"
     val performanceMode: Boolean = false, // Lower particle count for smoother battery/FPS
     val timeScaleMultiplier: Float = 1.0f, // 1.0 = true real-time, can be boosted for demonstration
-    val lofiChordPreset: Int = 0 // 0 = Calm Chords, 1 = Moonlight Lullaby, 2 = Sunbeam Melody
+    val lofiChordPreset: Int = 0, // Legacy preset
+    val languageCode: String = "en", // "en" for English, "id" for Indonesian
+    val lastPlaylistId: String = "lofi",
+    val lastTrackId: String = "lofi_1",
+    val isAutoMusic: Boolean = true,
+    val isShuffle: Boolean = false,
+    val isMusicPlaying: Boolean = true
 )

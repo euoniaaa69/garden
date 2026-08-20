@@ -10,6 +10,7 @@ import com.example.domain.DayNightContext
 import com.example.domain.DayNightEngine
 import com.example.domain.ParticleManager
 import com.example.domain.WeatherEngine
+import com.example.model.AudioPlayerState
 import com.example.model.GardenPlantEntity
 import com.example.model.GardenSettingsEntity
 import com.example.model.GrowthCalculator
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalTime
@@ -60,6 +62,9 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
     val audioEngine = AudioEngine()
     val weatherEngine = WeatherEngine()
     val particleManager = ParticleManager()
+    val randomEventManager = com.example.domain.RandomEventManager()
+
+    val audioPlayerState: StateFlow<AudioPlayerState> = audioEngine.playerState
 
     private val _timeOfDayOverride = MutableStateFlow<TimeOfDay?>(null)
     val timeOfDayOverride: StateFlow<TimeOfDay?> = _timeOfDayOverride.asStateFlow()
@@ -73,6 +78,7 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
     private val _tickerTime = MutableStateFlow(System.currentTimeMillis())
 
     private var lastRecordedStage: Int = 1
+    private var hasRestoredAudioSettings = false
 
     init {
         val db = GardenDatabase.getDatabase(application)
@@ -85,7 +91,24 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
         // Launch procedural audio engine
         audioEngine.start()
 
-        // Periodic ticker for day/night, live growth calculation, and weather updates
+        // Restore persistent audio settings on start
+        viewModelScope.launch {
+            val savedSettings = repository.settings.firstOrNull() ?: GardenSettingsEntity()
+            audioEngine.musicVolume = savedSettings.musicVolume
+            audioEngine.ambientVolume = savedSettings.ambientVolume
+            audioEngine.effectsVolume = savedSettings.effectsVolume
+            audioEngine.musicManager.restoreState(
+                playlistId = savedSettings.lastPlaylistId,
+                trackId = savedSettings.lastTrackId,
+                autoMusic = savedSettings.isAutoMusic,
+                shuffle = savedSettings.isShuffle,
+                playing = savedSettings.isMusicPlaying
+            )
+            audioEngine.syncPlayerState()
+            hasRestoredAudioSettings = true
+        }
+
+        // Periodic ticker for day/night, live growth calculation, weather, and audio transitions
         viewModelScope.launch {
             while (true) {
                 val now = System.currentTimeMillis()
@@ -94,9 +117,11 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
                 val dn = DayNightEngine.calculateCurrentContext(localTime, _timeOfDayOverride.value)
                 _dayNightContext.value = dn
 
-                // Update audio engine parameters
-                audioEngine.currentTimeOfDay = dn.timeOfDay
-                audioEngine.currentWeather = weatherEngine.currentWeather.value
+                // Update audio engine environmental inputs and trigger auto music transitions
+                audioEngine.onEnvironmentUpdated(
+                    weather = weatherEngine.currentWeather.value,
+                    timeOfDay = dn.timeOfDay
+                )
 
                 weatherEngine.tickWeatherSimulation(now)
 
@@ -151,7 +176,6 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
         audioEngine.musicVolume = currentSettings.musicVolume
         audioEngine.ambientVolume = currentSettings.ambientVolume
         audioEngine.effectsVolume = currentSettings.effectsVolume
-        audioEngine.chordPresetIndex = currentSettings.lofiChordPreset
 
         val liveState = GrowthCalculator.calculateLiveState(
             plant = activePlant,
@@ -225,7 +249,7 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
         _timeOfDayOverride.value = timeOfDay
         val dn = DayNightEngine.calculateCurrentContext(LocalTime.now(), timeOfDay)
         _dayNightContext.value = dn
-        audioEngine.currentTimeOfDay = dn.timeOfDay
+        audioEngine.onEnvironmentUpdated(weatherEngine.currentWeather.value, dn.timeOfDay)
     }
 
     fun plantNewSpecies(species: PlantSpecies) {
@@ -251,20 +275,87 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
     fun setWeather(weather: WeatherState) {
         weatherEngine.setManualWeather(weather)
         updateSettings { it.copy(weatherMode = weather.id) }
+        audioEngine.onEnvironmentUpdated(weather, _dayNightContext.value.timeOfDay)
     }
 
     fun setAutoWeather() {
         weatherEngine.setAutoCycle()
         updateSettings { it.copy(weatherMode = "auto") }
+        audioEngine.onEnvironmentUpdated(weatherEngine.currentWeather.value, _dayNightContext.value.timeOfDay)
+    }
+
+    // =========================================================================
+    // Music & Playlist Audio Controls
+    // =========================================================================
+
+    fun toggleMusicPlayPause() {
+        audioEngine.musicManager.togglePlayPause()
+        audioEngine.syncPlayerState()
+        updateSettings {
+            it.copy(
+                isMusicPlaying = audioEngine.musicManager.isPlaying.get(),
+                lastPlaylistId = audioEngine.musicManager.activePlaylist.id,
+                lastTrackId = audioEngine.musicManager.currentTrack.id
+            )
+        }
+    }
+
+    fun nextMusicTrack() {
+        audioEngine.musicManager.nextTrack()
+        audioEngine.syncPlayerState()
+        updateSettings {
+            it.copy(
+                lastPlaylistId = audioEngine.musicManager.activePlaylist.id,
+                lastTrackId = audioEngine.musicManager.currentTrack.id
+            )
+        }
+    }
+
+    fun prevMusicTrack() {
+        audioEngine.musicManager.prevTrack()
+        audioEngine.syncPlayerState()
+        updateSettings {
+            it.copy(
+                lastPlaylistId = audioEngine.musicManager.activePlaylist.id,
+                lastTrackId = audioEngine.musicManager.currentTrack.id
+            )
+        }
+    }
+
+    fun selectMusicPlaylist(playlistId: String) {
+        audioEngine.musicManager.selectPlaylist(playlistId, startPlaying = true)
+        audioEngine.syncPlayerState()
+        updateSettings {
+            it.copy(
+                lastPlaylistId = playlistId,
+                lastTrackId = audioEngine.musicManager.currentTrack.id,
+                isMusicPlaying = true
+            )
+        }
+    }
+
+    fun setMusicAutoMode(enabled: Boolean) {
+        audioEngine.musicManager.isAutoMusic = enabled
+        audioEngine.onEnvironmentUpdated(weatherEngine.currentWeather.value, _dayNightContext.value.timeOfDay)
+        audioEngine.syncPlayerState()
+        updateSettings { it.copy(isAutoMusic = enabled) }
+    }
+
+    fun setMusicShuffle(enabled: Boolean) {
+        audioEngine.musicManager.isShuffle = enabled
+        audioEngine.syncPlayerState()
+        updateSettings { it.copy(isShuffle = enabled) }
     }
 
     fun setMusicVolume(volume: Float) {
         audioEngine.musicVolume = volume
+        audioEngine.syncPlayerState()
         updateSettings { it.copy(musicVolume = volume) }
     }
 
     fun setAmbientVolume(volume: Float) {
         audioEngine.ambientVolume = volume
+        audioEngine.syncPlayerState()
         updateSettings { it.copy(ambientVolume = volume) }
     }
 
@@ -274,7 +365,6 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setChordPreset(preset: Int) {
-        audioEngine.chordPresetIndex = preset
         updateSettings { it.copy(lofiChordPreset = preset) }
     }
 
@@ -284,6 +374,10 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setTimeScaleMultiplier(multiplier: Float) {
         updateSettings { it.copy(timeScaleMultiplier = multiplier) }
+    }
+
+    fun setLanguage(languageCode: String) {
+        updateSettings { it.copy(languageCode = languageCode) }
     }
 
     fun toggleRelaxMode() {
@@ -314,9 +408,19 @@ class GardenViewModel(application: Application) : AndroidViewModel(application) 
             )
 
             val live = state.liveGrowthState
+            val currentAudioSettings = state.settings.copy(
+                lastPlaylistId = audioEngine.musicManager.activePlaylist.id,
+                lastTrackId = audioEngine.musicManager.currentTrack.id,
+                isAutoMusic = audioEngine.musicManager.isAutoMusic,
+                isShuffle = audioEngine.musicManager.isShuffle,
+                isMusicPlaying = audioEngine.musicManager.isPlaying.get(),
+                musicVolume = audioEngine.musicVolume,
+                ambientVolume = audioEngine.ambientVolume
+            )
+
             repository.saveGardenSnapshot(
                 plant = currentPlant,
-                settings = state.settings,
+                settings = currentAudioSettings,
                 liveStage = live.stage,
                 hydration = live.hydrationLevel,
                 healthScore = live.healthScore,

@@ -34,10 +34,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import com.example.domain.DayNightContext
 import com.example.domain.ParticleManager
+import com.example.domain.RandomEventManager
 import com.example.model.LivePlantState
 import com.example.model.PlantSpecies
 import com.example.model.WeatherState
 import kotlinx.coroutines.launch
+import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
@@ -48,6 +50,7 @@ fun PixelGardenCanvas(
     livePlantState: LivePlantState,
     isPerformanceMode: Boolean,
     particleManager: ParticleManager,
+    randomEventManager: RandomEventManager? = null,
     modifier: Modifier = Modifier,
     onPlantTapped: () -> Unit = {}
 ) {
@@ -119,12 +122,24 @@ fun PixelGardenCanvas(
         val canvasWidth = size.width
         val canvasHeight = size.height
 
+        // Update spontaneous random event manager
+        randomEventManager?.update(
+            deltaSeconds = currentDeltaSeconds,
+            width = canvasWidth,
+            height = canvasHeight,
+            isNight = dayNightContext.timeOfDay.isNight
+        )
+
+        val overcastDarkness = randomEventManager?.overcastFactor ?: 0f
+        val suddenRainLevel = randomEventManager?.suddenRainFactor ?: 0f
+        val effectiveRainCount = (weatherState.rainDropCount + (suddenRainLevel * 85).toInt())
+
         // Update continuous particle simulation
         particleManager.update(
             deltaSeconds = currentDeltaSeconds,
             width = canvasWidth,
             height = canvasHeight,
-            targetRainCount = weatherState.rainDropCount,
+            targetRainCount = effectiveRainCount,
             targetFireflyCount = dayNightContext.fireflyCount,
             isPerformanceMode = isPerformanceMode
         )
@@ -166,29 +181,110 @@ fun PixelGardenCanvas(
         )
 
         // ---------------------------------------------------------------------
-        // 2. Stars at Night/Dusk
+        // 2. Stars & Shooting Stars at Night/Dusk
         // ---------------------------------------------------------------------
         if (dayNightContext.starAlpha > 0.05f) {
             val starAlpha = dayNightContext.starAlpha
-            // Procedural fixed star positions
+            // Procedural fixed star positions across multiple magnitudes
             val starPositions = listOf(
-                Pair(0.12f, 0.10f), Pair(0.25f, 0.18f), Pair(0.38f, 0.08f),
-                Pair(0.55f, 0.14f), Pair(0.72f, 0.09f), Pair(0.85f, 0.22f),
-                Pair(0.18f, 0.32f), Pair(0.44f, 0.28f), Pair(0.68f, 0.34f),
-                Pair(0.92f, 0.15f), Pair(0.06f, 0.24f), Pair(0.79f, 0.29f),
-                Pair(0.30f, 0.04f), Pair(0.62f, 0.05f), Pair(0.48f, 0.19f)
+                Pair(0.10f, 0.08f), Pair(0.22f, 0.16f), Pair(0.36f, 0.07f),
+                Pair(0.52f, 0.13f), Pair(0.70f, 0.08f), Pair(0.86f, 0.20f),
+                Pair(0.16f, 0.30f), Pair(0.42f, 0.26f), Pair(0.66f, 0.32f),
+                Pair(0.92f, 0.14f), Pair(0.05f, 0.22f), Pair(0.78f, 0.28f),
+                Pair(0.28f, 0.04f), Pair(0.60f, 0.05f), Pair(0.46f, 0.18f),
+                Pair(0.14f, 0.44f), Pair(0.84f, 0.40f), Pair(0.34f, 0.38f),
+                Pair(0.58f, 0.42f), Pair(0.74f, 0.18f), Pair(0.03f, 0.12f)
             )
+
+            // Constellation / Major Star clusters
             for ((idx, pos) in starPositions.withIndex()) {
-                val twinkle = (sin(fogDrift.toDouble() * 2.0 + idx).toFloat() * 0.3f + 0.7f) * starAlpha
-                val starColor = Color(0xFFFFFFFF).copy(alpha = twinkle.coerceIn(0f, 1f))
+                val twinkleSpeed = 1.8f + (idx % 5) * 0.4f
+                val twinkle = (sin(fogDrift.toDouble() * twinkleSpeed + idx * 1.3).toFloat() * 0.4f + 0.6f) * starAlpha
                 val sx = pos.first * canvasWidth
-                val sy = pos.second * canvasHeight * 0.6f
-                drawCircle(starColor, if (idx % 3 == 0) 2.2f else 1.5f, Offset(sx, sy))
+                val sy = pos.second * canvasHeight * 0.58f
+                val starColor = Color(0xFFFFFFFF).copy(alpha = twinkle.coerceIn(0f, 1f))
+
+                if (idx % 4 == 0) {
+                    // 4-Point Diamond Sparkle Star (Major Beacon Star)
+                    val starSize = 3.8f * (twinkle / starAlpha).coerceIn(0.5f, 1.2f)
+                    val starPath = Path().apply {
+                        moveTo(sx, sy - starSize)
+                        lineTo(sx + starSize * 0.35f, sy)
+                        lineTo(sx, sy + starSize)
+                        lineTo(sx - starSize * 0.35f, sy)
+                        close()
+                    }
+                    drawPath(starPath, starColor)
+
+                    val crossPath = Path().apply {
+                        moveTo(sx - starSize, sy)
+                        lineTo(sx, sy - starSize * 0.35f)
+                        lineTo(sx + starSize, sy)
+                        lineTo(sx, sy + starSize * 0.35f)
+                        close()
+                    }
+                    drawPath(crossPath, starColor)
+
+                    // Subtle soft halo
+                    drawCircle(
+                        color = Color(0x33C7D2FE).copy(alpha = (twinkle * 0.4f).coerceIn(0f, 1f)),
+                        radius = starSize * 2.2f,
+                        center = Offset(sx, sy)
+                    )
+                } else {
+                    // Fine round star
+                    val radius = if (idx % 2 == 0) 2.2f else 1.4f
+                    drawCircle(starColor, radius, Offset(sx, sy))
+                }
+            }
+
+            // Procedural Shooting Star / Meteor (streaks occasionally across the upper night sky)
+            if (dayNightContext.timeOfDay.isNight || dayNightContext.starAlpha > 0.4f) {
+                val shootingCycle = (fogDrift * 0.35f) % 12f // 12 second loop
+                if (shootingCycle < 1.8f) { // Active shooting phase for 1.8 seconds
+                    val progress = shootingCycle / 1.8f
+                    val startX = canvasWidth * 0.82f - progress * (canvasWidth * 0.55f)
+                    val startY = canvasHeight * 0.04f + progress * (canvasHeight * 0.22f)
+                    val tailLen = 65f * (1f - (progress - 0.7f).coerceAtLeast(0f) / 0.3f)
+
+                    val trailAngle = (32f * Math.PI / 180.0).toFloat()
+                    val tailX = startX + cos(trailAngle) * tailLen
+                    val tailY = startY - sin(trailAngle) * tailLen
+
+                    val streakAlpha = (sin(progress * Math.PI).toFloat() * starAlpha).coerceIn(0f, 1f)
+
+                    drawLine(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFFFFFFFF).copy(alpha = streakAlpha),
+                                Color(0xFFBAE6FD).copy(alpha = streakAlpha * 0.7f),
+                                Color.Transparent
+                            ),
+                            start = Offset(startX, startY),
+                            end = Offset(tailX, tailY)
+                        ),
+                        start = Offset(startX, startY),
+                        end = Offset(tailX, tailY),
+                        strokeWidth = 2.5f
+                    )
+
+                    // Glowing shooting star head
+                    drawCircle(
+                        color = Color(0xFFFFFFFF).copy(alpha = streakAlpha),
+                        radius = 2.8f,
+                        center = Offset(startX, startY)
+                    )
+                    drawCircle(
+                        color = Color(0x6660A5FA).copy(alpha = streakAlpha * 0.6f),
+                        radius = 6.0f,
+                        center = Offset(startX, startY)
+                    )
+                }
             }
         }
 
         // ---------------------------------------------------------------------
-        // 3. Sun or Moon
+        // 3. Sun or Moon (Overhauled Celestial Renderer)
         // ---------------------------------------------------------------------
         val celX = dayNightContext.sunMoonX * canvasWidth
         val celY = dayNightContext.sunMoonY * canvasHeight * 0.55f
@@ -197,46 +293,56 @@ fun PixelGardenCanvas(
             cx = celX,
             cy = celY,
             isSun = dayNightContext.isSun,
+            ambientLight = dayNightContext.ambientLight,
+            timeOfDay = dayNightContext.timeOfDay,
+            animTime = fogDrift
+        )
+
+        // ---------------------------------------------------------------------
+        // 4. Distant Mountain Silhouettes (Gunung Siluet di Belakang Pohon Bambu)
+        // ---------------------------------------------------------------------
+        val horizonY = canvasHeight * 0.60f
+        PixelArtDrawers.drawMountainSilhouettes(
+            drawScope = this,
+            width = canvasWidth,
+            height = canvasHeight,
+            horizonY = horizonY,
+            isNight = dayNightContext.timeOfDay.isNight,
+            ambientLight = dayNightContext.ambientLight,
+            fogAlpha = weatherState.fogAlpha
+        )
+
+        // ---------------------------------------------------------------------
+        // 5. Dense Lush Bamboo Grove (Pohon Bambu Banyak & Rimbun)
+        // ---------------------------------------------------------------------
+        val groundY = canvasHeight * 0.70f
+        PixelArtDrawers.drawDenseBambooForest(
+            drawScope = this,
+            width = canvasWidth,
+            baseY = groundY + 10f,
+            windSway = windSway,
+            isNight = dayNightContext.timeOfDay.isNight,
             ambientLight = dayNightContext.ambientLight
         )
 
         // ---------------------------------------------------------------------
-        // 4. Distant Parallax Mountain Silhouettes
+        // 6. Traditional Rural Village Hut (Gubuk Desa / Saung Bambu)
         // ---------------------------------------------------------------------
-        val horizonY = canvasHeight * 0.62f
-        val mountainFarColor = if (dayNightContext.timeOfDay.isNight) Color(0xFF101928) else Color(0xFF6B8299)
-        val mountainNearColor = if (dayNightContext.timeOfDay.isNight) Color(0xFF0A111C) else Color(0xFF475B6E)
-
-        val farMountainPath = Path().apply {
-            moveTo(0f, horizonY)
-            lineTo(canvasWidth * 0.15f, horizonY - 80f)
-            lineTo(canvasWidth * 0.35f, horizonY - 30f)
-            lineTo(canvasWidth * 0.58f, horizonY - 105f)
-            lineTo(canvasWidth * 0.82f, horizonY - 45f)
-            lineTo(canvasWidth, horizonY - 70f)
-            lineTo(canvasWidth, canvasHeight)
-            lineTo(0f, canvasHeight)
-            close()
-        }
-        drawPath(farMountainPath, mountainFarColor.copy(alpha = 0.5f))
-
-        val nearMountainPath = Path().apply {
-            moveTo(0f, horizonY + 20f)
-            lineTo(canvasWidth * 0.28f, horizonY - 55f)
-            lineTo(canvasWidth * 0.50f, horizonY - 15f)
-            lineTo(canvasWidth * 0.75f, horizonY - 65f)
-            lineTo(canvasWidth, horizonY - 25f)
-            lineTo(canvasWidth, canvasHeight)
-            lineTo(0f, canvasHeight)
-            close()
-        }
-        drawPath(nearMountainPath, mountainNearColor.copy(alpha = 0.75f))
+        val hutX = canvasWidth * 0.28f
+        PixelArtDrawers.drawVillageHut(
+            drawScope = this,
+            hutCenterX = hutX,
+            groundY = groundY - 4f,
+            isNight = dayNightContext.timeOfDay.isNight,
+            ambientLight = dayNightContext.ambientLight,
+            animTime = fogDrift
+        )
 
         // ---------------------------------------------------------------------
-        // 5. Flying Birds
+        // 7. Flying Birds & Spontaneous Bird Flocks (Kawanan Burung Berterbangan)
         // ---------------------------------------------------------------------
-        if (!dayNightContext.timeOfDay.isNight && weatherState != WeatherState.RAIN) {
-            val birdY = canvasHeight * 0.24f + sin(birdFlyX * 0.01).toFloat() * 15f
+        if (!dayNightContext.timeOfDay.isNight && weatherState != WeatherState.RAIN && suddenRainLevel < 0.3f) {
+            val birdY = canvasHeight * 0.22f + sin(birdFlyX * 0.01).toFloat() * 15f
             val wingPhase = birdFlyX * 0.15f
             val birdColor = if (dayNightContext.ambientLight > 0.6f) Color(0x66263238) else Color(0x44FFFFFF)
             PixelArtDrawers.drawFlyingBird(this, birdFlyX, birdY, wingPhase, birdColor)
@@ -244,9 +350,23 @@ fun PixelGardenCanvas(
             PixelArtDrawers.drawFlyingBird(this, birdFlyX - 52f, birdY - 8f, wingPhase + 1.2f, birdColor)
         }
 
+        // Spontaneous bird flock event across mountains & sky
+        randomEventManager?.flockBirds?.forEach { flockBird ->
+            PixelArtDrawers.drawFlockBird(
+                drawScope = this,
+                bird = flockBird,
+                isNight = dayNightContext.timeOfDay.isNight
+            )
+        }
+
         // ---------------------------------------------------------------------
-        // 6. Drifting Clouds
+        // 8. Drifting Clouds (Enhanced with Overcast Darkening)
         // ---------------------------------------------------------------------
+        val cloudTintFinal = if (overcastDarkness > 0.1f) {
+            Color(0xFF37474F).copy(alpha = 0.85f * overcastDarkness)
+        } else {
+            dayNightContext.cloudTint
+        }
         for (cloud in particleManager.clouds) {
             PixelArtDrawers.drawPixelCloud(
                 drawScope = this,
@@ -254,40 +374,45 @@ fun PixelGardenCanvas(
                 y = cloud.y,
                 w = cloud.width,
                 h = cloud.height,
-                tint = dayNightContext.cloudTint,
-                alpha = cloud.alpha * (if (weatherState == WeatherState.CLOUDY || weatherState == WeatherState.RAIN) 0.9f else 0.5f)
+                tint = cloudTintFinal,
+                alpha = (cloud.alpha + overcastDarkness * 0.4f).coerceIn(0f, 1f) * (if (weatherState == WeatherState.CLOUDY || weatherState == WeatherState.RAIN || overcastDarkness > 0.3f) 0.95f else 0.5f)
             )
         }
 
         // ---------------------------------------------------------------------
-        // 7. Garden Flooring & Wooden Decking (Engawa)
+        // 9. Rural Dirt Road & Earthen Terrain (Jalan Tanah Pedesaan & Rumput)
         // ---------------------------------------------------------------------
-        val groundY = canvasHeight * 0.72f
-        val grassColor = if (dayNightContext.timeOfDay.isNight) Color(0xFF13231A) else Color(0xFF335C3E)
+        PixelArtDrawers.drawRuralDirtRoadAndGround(
+            drawScope = this,
+            width = canvasWidth,
+            height = canvasHeight,
+            groundY = groundY,
+            isNight = dayNightContext.timeOfDay.isNight,
+            ambientLight = dayNightContext.ambientLight,
+            windSway = windSway
+        )
+
+        // ---------------------------------------------------------------------
+        // 9b. Walking Villagers on Dirt Road (Orang-Orang Desa Berlalu Lalang)
+        // ---------------------------------------------------------------------
+        randomEventManager?.villagers?.forEach { villager ->
+            PixelArtDrawers.drawVillager(
+                drawScope = this,
+                villager = villager,
+                isNight = dayNightContext.timeOfDay.isNight,
+                ambientLight = dayNightContext.ambientLight
+            )
+        }
+
+        // ---------------------------------------------------------------------
+        // 10. Rustic Wooden Garden Deck / Pedestal for Plant
+        // ---------------------------------------------------------------------
         val deckColor = if (dayNightContext.timeOfDay.isNight) Color(0xFF2A1C16) else Color(0xFF5D4037)
         val deckHighlight = if (dayNightContext.timeOfDay.isNight) Color(0xFF38261F) else Color(0xFF795548)
-
-        // Lush grass lawn
-        drawRect(grassColor, Offset(0f, groundY), Size(canvasWidth, canvasHeight - groundY))
-
-        // Gentle grass blade tufts
-        for (i in 0..12) {
-            val gx = (canvasWidth / 12f) * i + (i % 3) * 10f
-            val gy = groundY + 15f + (i % 4) * 12f
-            val swayX = gx + windSway * 180f
-            drawLine(
-                color = if (dayNightContext.timeOfDay.isNight) Color(0xFF1F3D2C) else Color(0xFF4E7C59),
-                start = Offset(gx, gy),
-                end = Offset(swayX, gy - 12f),
-                strokeWidth = 2.5f
-            )
-        }
-
-        // Japanese wooden veranda deck / garden pedestal
-        val deckLeft = canvasWidth * 0.12f
-        val deckWidth = canvasWidth * 0.76f
+        val deckLeft = canvasWidth * 0.14f
+        val deckWidth = canvasWidth * 0.72f
         val deckTop = groundY + 18f
-        val deckHeight = 48f
+        val deckHeight = 44f
 
         // Deck shadow
         drawOval(Color(0x44000000), Offset(deckLeft - 10f, deckTop + deckHeight - 8f), Size(deckWidth + 20f, 18f))
@@ -305,9 +430,9 @@ fun PixelGardenCanvas(
         drawLine(deckHighlight, Offset(deckLeft, deckTop + 2f), Offset(deckLeft + deckWidth, deckTop + 2f), strokeWidth = 3f)
 
         // ---------------------------------------------------------------------
-        // 8. Japanese Stone Lantern (Tōrō)
+        // 11. Japanese / Village Lantern (Lentera Desa)
         // ---------------------------------------------------------------------
-        val lanternX = canvasWidth * 0.20f
+        val lanternX = canvasWidth * 0.82f
         PixelArtDrawers.drawStoneLantern(
             drawScope = this,
             x = lanternX,
@@ -317,7 +442,7 @@ fun PixelGardenCanvas(
         )
 
         // ---------------------------------------------------------------------
-        // 9. Plant Pot & Live Growing Plant
+        // 12. Plant Pot & Live Growing Plant
         // ---------------------------------------------------------------------
         val plantCenterX = canvasWidth * 0.50f
         val potBottomY = deckTop + 14f
@@ -357,9 +482,9 @@ fun PixelGardenCanvas(
         }
 
         // ---------------------------------------------------------------------
-        // 11. Weather Effects (Rain & Splashes)
+        // 11. Weather Effects (Rain & Splashes, including Sudden Rain Event)
         // ---------------------------------------------------------------------
-        if (weatherState.rainDropCount > 0) {
+        if (effectiveRainCount > 0) {
             for (drop in particleManager.rainDrops) {
                 drawLine(
                     color = Color(0xFFB0BEC5).copy(alpha = drop.alpha),
@@ -382,15 +507,15 @@ fun PixelGardenCanvas(
         // ---------------------------------------------------------------------
         // 12. Weather Effects (Fog Mist Bands)
         // ---------------------------------------------------------------------
-        if (weatherState.fogAlpha > 0.02f) {
-            val fogAlpha = weatherState.fogAlpha
+        val effectiveFogAlpha = (weatherState.fogAlpha + overcastDarkness * 0.15f).coerceIn(0f, 0.7f)
+        if (effectiveFogAlpha > 0.02f) {
             for (f in 0..3) {
                 val fy = groundY - 40f + f * 35f + sin(fogDrift + f).toFloat() * 10f
                 val fogBrush = Brush.horizontalGradient(
                     listOf(
                         Color.Transparent,
-                        Color(0xFFECEFF1).copy(alpha = fogAlpha),
-                        Color(0xFFECEFF1).copy(alpha = fogAlpha * 1.3f),
+                        Color(0xFFECEFF1).copy(alpha = effectiveFogAlpha),
+                        Color(0xFFECEFF1).copy(alpha = effectiveFogAlpha * 1.3f),
                         Color.Transparent
                     )
                 )
@@ -423,10 +548,29 @@ fun PixelGardenCanvas(
         }
 
         // ---------------------------------------------------------------------
-        // 14. Weather Atmospheric Tint Overlay
+        // 14. Weather Atmospheric Tint Overlay & Dark Overcast Effect (Mendung Gelap)
         // ---------------------------------------------------------------------
         if (weatherState.skyTint != Color.Transparent) {
             drawRect(weatherState.skyTint, size = size)
+        }
+
+        // Spontaneous Dark Overcast Shadow
+        if (overcastDarkness > 0.05f) {
+            val overcastColor = Color(0xFF1E293B).copy(alpha = overcastDarkness * 0.65f)
+            drawRect(overcastColor, size = size)
+
+            // Deep stormy sky top vignette
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(
+                        Color(0xCC0F172A).copy(alpha = overcastDarkness * 0.75f),
+                        Color.Transparent
+                    ),
+                    startY = 0f,
+                    endY = canvasHeight * 0.45f
+                ),
+                size = size
+            )
         }
     }
 }

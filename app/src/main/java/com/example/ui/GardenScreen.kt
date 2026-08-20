@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.GlobalTintOverlay
+import com.example.ui.components.MusicDialog
 import com.example.ui.components.PixelBadge
 import com.example.ui.components.PixelFloatingButton
 import com.example.ui.components.PixelFrame
@@ -67,6 +69,7 @@ import com.example.ui.components.SettingsDialog
 import com.example.ui.components.SoundMixerDialog
 import com.example.ui.components.WeatherDialog
 import com.example.ui.components.WeatherParticleOverlay
+import com.example.ui.components.WeatherTimeSummaryCard
 import com.example.ui.render.PixelGardenCanvas
 import com.example.ui.render.PixelIcons
 import com.example.ui.theme.ArtisticDarkCard
@@ -77,6 +80,9 @@ import com.example.ui.theme.ArtisticIndigoLight
 import com.example.ui.theme.ArtisticIndigoPrimary
 import com.example.ui.theme.ArtisticTextPrimary
 import com.example.ui.theme.ArtisticTextSecondary
+import com.example.ui.util.EnStrings
+import com.example.ui.util.IdStrings
+import com.example.ui.util.LocalAppStrings
 import kotlinx.coroutines.delay
 
 @Composable
@@ -86,9 +92,11 @@ fun GardenScreen(
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val playerState by viewModel.audioPlayerState.collectAsStateWithLifecycle()
 
     var showPlantInfoDialog by remember { mutableStateOf(false) }
     var showSeedVaultDialog by remember { mutableStateOf(false) }
+    var showMusicDialog by remember { mutableStateOf(false) }
     var showSoundMixerDialog by remember { mutableStateOf(false) }
     var showWeatherDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
@@ -136,20 +144,23 @@ fun GardenScreen(
         }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures {
-                    registerInteraction()
-                    // Tap on garden gives a gentle plant nourishment bounce
-                    viewModel.waterPlant(screenWidthPx * 0.5f, screenHeightPx * 0.72f)
+    val currentStrings = if (uiState.settings.languageCode == "id") IdStrings else EnStrings
+
+    CompositionLocalProvider(LocalAppStrings provides currentStrings) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures {
+                        registerInteraction()
+                        // Tap on garden gives a gentle plant nourishment bounce
+                        viewModel.waterPlant(screenWidthPx * 0.5f, screenHeightPx * 0.72f)
+                    }
                 }
-            }
-    ) {
-        // =====================================================================
-        // 1. Main Ambient Garden View Container
-        // =====================================================================
+        ) {
+            // =====================================================================
+            // 1. Main Ambient Garden View Container
+            // =====================================================================
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -162,6 +173,7 @@ fun GardenScreen(
                 livePlantState = uiState.liveGrowthState,
                 isPerformanceMode = uiState.settings.performanceMode,
                 particleManager = viewModel.particleManager,
+                randomEventManager = viewModel.randomEventManager,
                 onPlantTapped = {
                     registerInteraction()
                     viewModel.waterPlant(screenWidthPx * 0.5f, screenHeightPx * 0.72f)
@@ -174,18 +186,19 @@ fun GardenScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Dynamic Weather Particle Overlay (Gentle Rain, God Rays, Sun Motes, Mist)
+            // Dynamic Weather Particle Overlay (Gentle Rain, God Rays, Sun Motes, Moonbeams, Stardust)
             WeatherParticleOverlay(
                 weatherState = uiState.weatherState,
                 isPerformanceMode = uiState.settings.performanceMode,
                 sunPositionXRatio = uiState.dayNightContext.sunMoonX,
                 sunPositionYRatio = uiState.dayNightContext.sunMoonY,
+                dayNightContext = uiState.dayNightContext,
                 modifier = Modifier.fillMaxSize()
             )
         }
 
         // =====================================================================
-        // 2. Minimal Anime Pixel Header (Auto-Hiding)
+        // 2. Weather & Time Overlay Summary Card (Auto-Hiding)
         // =====================================================================
         AnimatedVisibility(
             visible = isUiVisible && !uiState.isRelaxMode,
@@ -193,51 +206,64 @@ fun GardenScreen(
             exit = fadeOut(animationSpec = tween(600)),
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(top = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Time & Time-of-Day Pixel Badge (Adaptive Color Palette)
-                PixelBadge(
-                    text = "${uiState.dayNightContext.localTimeFormatted} • ${uiState.dayNightContext.timeOfDay.label}",
-                    backgroundColor = uiState.dayNightContext.cardBackgroundColor,
-                    borderColor = uiState.dayNightContext.cardBorderColor,
-                    textColor = Color(0xFFF8FAFC),
+                // Top Mini Utility Bar (Species Info & Save Progress)
+                Row(
                     modifier = Modifier
-                        .clickable { registerInteraction(); showPlantInfoDialog = true }
-                        .testTag("pixel_time_badge")
-                )
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PixelBadge(
+                        text = "${uiState.species.name} • Stage ${uiState.liveGrowthState.stage}",
+                        backgroundColor = uiState.dayNightContext.cardBackgroundColor,
+                        borderColor = uiState.dayNightContext.cardBorderColor,
+                        textColor = Color(0xFFF8FAFC),
+                        leadingIcon = {
+                            PixelIcons.SeedSprout(size = 12.dp, leafColor = Color(uiState.species.primaryColorHex))
+                        },
+                        modifier = Modifier
+                            .clickable { registerInteraction(); showPlantInfoDialog = true }
+                            .testTag("pixel_species_badge")
+                    )
 
-                // Weather Pixel Badge (Clickable to switch weather)
-                PixelBadge(
-                    text = uiState.weatherState.label,
-                    backgroundColor = uiState.dayNightContext.cardBackgroundColor,
-                    borderColor = Color(0xFF38BDF8),
-                    textColor = Color(0xFFE0F2FE),
-                    leadingIcon = {
-                        PixelIcons.WaterDroplet(size = 14.dp, color = Color(0xFF38BDF8))
-                    },
-                    modifier = Modifier
-                        .clickable { registerInteraction(); showWeatherDialog = true }
-                        .testTag("pixel_weather_badge")
-                )
+                    // Manual Save Progress Pixel Badge
+                    PixelBadge(
+                        text = "Save",
+                        backgroundColor = Color(0x33065F46),
+                        borderColor = Color(0xFF10B981),
+                        textColor = Color(0xFFD1FAE5),
+                        leadingIcon = {
+                            PixelIcons.FloppyDisk(size = 14.dp, bodyColor = Color(0xFF34D399), accentColor = Color(0xFF059669))
+                        },
+                        modifier = Modifier
+                            .clickable { triggerSaveProgress() }
+                            .testTag("save_progress_button")
+                    )
+                }
 
-                // Manual Save Progress Pixel Badge
-                PixelBadge(
-                    text = "Save",
-                    backgroundColor = Color(0x33065F46),
-                    borderColor = Color(0xFF10B981),
-                    textColor = Color(0xFFD1FAE5),
-                    leadingIcon = {
-                        PixelIcons.FloppyDisk(size = 14.dp, bodyColor = Color(0xFF34D399), accentColor = Color(0xFF059669))
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Atmospheric Weather & Time-of-Day Overlay Summary Card
+                WeatherTimeSummaryCard(
+                    dayNightContext = uiState.dayNightContext,
+                    weatherState = uiState.weatherState,
+                    isAutoWeather = uiState.isAutoWeather,
+                    onOpenWeatherDialog = {
+                        registerInteraction()
+                        showWeatherDialog = true
                     },
-                    modifier = Modifier
-                        .clickable { triggerSaveProgress() }
-                        .testTag("save_progress_button")
+                    onOpenTimeDialog = {
+                        registerInteraction()
+                        showSettingsDialog = true
+                    }
                 )
             }
         }
@@ -351,17 +377,17 @@ fun GardenScreen(
                     PixelIcons.SeedSprout(size = 22.dp)
                 }
 
-                // 2. Floating Soundscape & Lo-Fi Mixer Button
+                // 2. Floating Music & Playlist Menu Button
                 PixelFloatingButton(
                     onClick = {
                         registerInteraction()
-                        showSoundMixerDialog = true
+                        showMusicDialog = true
                     },
                     size = 48.dp,
                     backgroundColor = uiState.dayNightContext.cardBackgroundColor,
                     borderColor = Color(0xFFFACC15),
                     highlightColor = Color(0xFFFEF08A),
-                    testTag = "floating_sound_mixer_button"
+                    testTag = "floating_music_menu_button"
                 ) {
                     PixelIcons.LoFiRadio(size = 22.dp)
                 }
@@ -515,6 +541,39 @@ fun GardenScreen(
             )
         }
 
+        if (showMusicDialog) {
+            MusicDialog(
+                playerState = playerState,
+                onPlayPauseToggle = {
+                    registerInteraction()
+                    viewModel.toggleMusicPlayPause()
+                },
+                onNextTrack = {
+                    registerInteraction()
+                    viewModel.nextMusicTrack()
+                },
+                onPrevTrack = {
+                    registerInteraction()
+                    viewModel.prevMusicTrack()
+                },
+                onSelectPlaylist = { playlistId ->
+                    registerInteraction()
+                    viewModel.selectMusicPlaylist(playlistId)
+                },
+                onAutoMusicToggle = { enabled ->
+                    registerInteraction()
+                    viewModel.setMusicAutoMode(enabled)
+                },
+                onShuffleToggle = { enabled ->
+                    registerInteraction()
+                    viewModel.setMusicShuffle(enabled)
+                },
+                onMusicVolumeChange = { viewModel.setMusicVolume(it) },
+                onAmbientVolumeChange = { viewModel.setAmbientVolume(it) },
+                onDismiss = { showMusicDialog = false }
+            )
+        }
+
         if (showSoundMixerDialog) {
             SoundMixerDialog(
                 musicVolume = uiState.settings.musicVolume,
@@ -551,11 +610,16 @@ fun GardenScreen(
                 timeScaleMultiplier = uiState.settings.timeScaleMultiplier,
                 currentTimeOfDayOverride = uiState.timeOfDayOverride,
                 activeTimeOfDay = uiState.dayNightContext.timeOfDay,
+                languageCode = uiState.settings.languageCode,
                 onPerformanceModeToggle = { viewModel.setPerformanceMode(it) },
                 onTimeScaleChange = { viewModel.setTimeScaleMultiplier(it) },
                 onTimeOfDaySelect = {
                     registerInteraction()
                     viewModel.setTimeOfDayOverride(it)
+                },
+                onLanguageSelect = {
+                    registerInteraction()
+                    viewModel.setLanguage(it)
                 },
                 onSaveProgress = {
                     triggerSaveProgress()
@@ -569,4 +633,5 @@ fun GardenScreen(
             )
         }
     }
+    } // Close CompositionLocalProvider
 }
